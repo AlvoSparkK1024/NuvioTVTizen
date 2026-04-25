@@ -1,4 +1,4 @@
-import { AuthManager } from "../../core/auth/authManager.js";
+import { AuthManager } from "../../../core/auth/authManager.js";
 
 // Obfuscated keys to bypass GitHub secret scanning
 const _U = "aHR0cHM6Ly9zaHpuZHV1bGNseHF1bmRmenR4di5zdXBhYmFzZS5jbw==";
