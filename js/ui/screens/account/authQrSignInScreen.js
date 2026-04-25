@@ -1,27 +1,67 @@
 import { Router } from "../../navigation/router.js";
-import { QrLoginService } from "../../../core/auth/qrLoginService.js";
-import { QrCodeGenerator } from "../../../core/qr/qrCodeGenerator.js";
 import { LocalStore } from "../../../core/storage/localStore.js";
 import { ScreenUtils } from "../../navigation/screen.js";
 import { AuthManager } from "../../../core/auth/authManager.js";
-import { I18n } from "../../../i18n/index.js";
-
-let pollInterval = null;
-let countdownInterval = null;
-let activeQrSessionId = 0;
-const GUEST_QR_BYPASS_KEY = "skipAuthQrGate";
 
 export const AuthQrSignInScreen = {
-
   async mount({ onboardingMode = false } = {}) {
     this.container = document.getElementById("account");
     this.onboardingMode = Boolean(onboardingMode);
-    this.isSignedIn = AuthManager.isAuthenticated;
-    this.hasBackDestination = Router.stack.length > 0;
-    this.isMounted = true;
-    this.isStartingQr = false;
-    this.isLeaving = false;
+    this.mode = 'login'; 
     ScreenUtils.show(this.container);
+    this.render();
+  },
+
+  render() {
+    if (this.mode === 'qr') {
+      this.renderQrMode();
+    } else {
+      this.renderLoginMode();
+    }
+  },
+
+  renderLoginMode() {
+    this.stopExpiryCheck();
+    this.container.innerHTML = `
+      <div class="qr-layout">
+        <section class="qr-left-panel">
+          <div class="qr-brand-lockup">
+            <img src="assets/brand/app_logo_wordmark.png" class="qr-logo" alt="Nuvio" />
+          </div>
+          <div class="qr-copy-block">
+            <h1 class="qr-title">Nuvio Ecosystem</h1>
+            <p class="qr-description">Sign in to sync your library and addons from the official nuvioapp.space ecosystem.</p>
+          </div>
+        </section>
+
+        <section class="qr-card-panel">
+          <div class="qr-card">
+            <header class="qr-card-header">
+              <h2 class="qr-card-title">Sign In</h2>
+              <p class="qr-card-subtitle">Use your nuvioapp.space credentials</p>
+            </header>
+
+            <div style="display: flex; flex-direction: column; gap: 10px; padding: 10px 0;">
+              <input type="email" id="nuvioEmail" class="focusable" placeholder="Email" style="background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.18); border-radius: 8px; color: #fff; padding: 12px; width: 100%; box-sizing: border-box;" />
+              <input type="password" id="nuvioPassword" class="focusable" placeholder="Password" style="background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.18); border-radius: 8px; color: #fff; padding: 12px; width: 100%; box-sizing: border-box;" />
+              <div id="login-status" style="color: #f87171; font-size: 13px; text-align: center; min-height: 18px;"></div>
+            </div>
+
+            <div class="qr-actions">
+              <button id="login-submit-btn" class="qr-action-btn qr-action-btn-primary focusable" data-action="submit">Sign In</button>
+              <button id="switch-to-qr-btn" class="qr-action-btn qr-action-btn-secondary focusable" data-action="switch-qr">Link with Phone (QR)</button>
+              <button id="login-skip-btn" class="qr-action-btn qr-action-btn-secondary focusable" data-action="skip">Skip</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+    this.setupEvents();
+  },
+
+  async renderQrMode() {
+    const code = await AuthManager.generateLinkingCode();
+    const linkUrl = AuthManager.getLinkingUrl(code);
 
     this.container.innerHTML = `
       <div class="qr-layout">
@@ -29,357 +69,104 @@ export const AuthQrSignInScreen = {
           <div class="qr-brand-lockup">
             <img src="assets/brand/app_logo_wordmark.png" class="qr-logo" alt="Nuvio" />
           </div>
-
           <div class="qr-copy-block">
-            <h1 class="qr-title">${I18n.t("auth.qr.title")}</h1>
-            <p id="qr-description" class="qr-description">${this.getLeftDescriptionMarkup()}</p>
+            <h1 class="qr-title">Link Device</h1>
+            <p class="qr-description">1. Scan the QR code with your phone.<br>2. Log in on <b>nuvioapp.space</b>.<br>3. This TV will be linked to your account.</p>
           </div>
         </section>
 
-        <section class="qr-card-panel" aria-label="${I18n.t("auth.qr.cardAriaLabel")}">
+        <section class="qr-card-panel">
           <div class="qr-card">
-            <header class="qr-card-header">
-              <h2 class="qr-card-title">${I18n.t("auth.qr.cardTitle")}</h2>
-              <p id="qr-card-subtitle" class="qr-card-subtitle">${this.getCardSubtitle()}</p>
-            </header>
-
-            <div id="qr-container" class="qr-code-frame"></div>
-            <div id="qr-code-text" class="qr-code-text"></div>
-            <div id="qr-status" class="qr-status">${this.getInitialStatusText()}</div>
-            <div class="qr-actions">
-              <button type="button" id="qr-refresh-btn" class="qr-action-btn qr-action-btn-primary focusable" data-action="refresh">${I18n.t("auth.qr.refresh")}</button>
-              <button type="button" id="qr-back-btn" class="qr-action-btn qr-action-btn-secondary focusable" data-action="back">${this.getBackButtonLabel()}</button>
-            </div>
+             <div id="qr-code-container" style="background: #fff; padding: 10px; border-radius: 12px; margin: 0 auto 15px; width: 210px; height: 210px; display: flex; align-items: center; justify-content: center;">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=190x190&data=${encodeURIComponent(linkUrl)}" style="width:100%; height:100%;" />
+             </div>
+             <div id="qr-code-display" style="text-align: center; font-size: 10px; font-family: monospace; color: rgba(255,255,255,0.4); word-break: break-all; margin-bottom: 5px; max-width: 210px;">${code}</div>
+             <div id="expiry-timer" style="text-align: center; font-size: 12px; color: #facc15; margin-bottom: 15px;">Code expires in 02:00</div>
+             <div class="qr-actions">
+                <button id="switch-to-login-btn" class="qr-action-btn qr-action-btn-secondary focusable" data-action="switch-login">Back to Sign In</button>
+             </div>
           </div>
         </section>
       </div>
     `;
+    this.setupEvents();
+    this.startExpiryCheck();
+    AuthManager.pollForLink(code);
+  },
 
-    this.refreshButton = this.container.querySelector("#qr-refresh-btn");
-    this.backButton = this.container.querySelector("#qr-back-btn");
-    if (this.refreshButton) {
-      this.refreshButton.onclick = () => {
-        this.handleRefreshAction();
-      };
-    }
-    if (this.backButton) {
-      this.backButton.onclick = () => {
-        this.handleContinueAction();
-      };
-    }
+  startExpiryCheck() {
+    this.stopExpiryCheck();
+    let secondsLeft = 2 * 60; // 2 Minutes
+    this.expiryInterval = setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft <= 0) {
+        this.renderQrMode(); // Refresh code
+        return;
+      }
+      const min = Math.floor(secondsLeft / 60);
+      const sec = secondsLeft % 60;
+      const timerEl = document.getElementById("expiry-timer");
+      if (timerEl) timerEl.innerText = `Code expires in ${min}:${sec < 10 ? '0' : ''}${sec}`;
+    }, 1000);
+  },
 
+  stopExpiryCheck() {
+    if (this.expiryInterval) clearInterval(this.expiryInterval);
+  },
+
+  setupEvents() {
+    const btns = this.container.querySelectorAll(".focusable");
+    btns.forEach(btn => {
+      btn.onclick = () => {
+        const action = btn.dataset.action;
+        if (action === "submit") this.handleLogin();
+        if (action === "switch-qr") { this.mode = 'qr'; this.render(); }
+        if (action === "switch-login") { this.mode = 'login'; this.render(); }
+        if (action === "skip") this.handleSkip();
+      };
+    });
     ScreenUtils.indexFocusables(this.container);
     ScreenUtils.setInitialFocus(this.container);
-    await this.startQr();
   },
 
-  async startQr() {
-    if (!this.isMounted || this.isLeaving || this.isStartingQr) {
+  async handleLogin() {
+    const email = document.getElementById("nuvioEmail")?.value?.trim();
+    const password = document.getElementById("nuvioPassword")?.value;
+    const statusEl = document.getElementById("login-status");
+
+    if (!email || !password) {
+      if (statusEl) statusEl.innerText = "Please enter credentials";
       return;
     }
-    this.isStartingQr = true;
-    this.updateActionButtons();
-    this.stopIntervals();
-    const sessionId = activeQrSessionId + 1;
-    activeQrSessionId = sessionId;
-    this.setStatus(I18n.t("auth.qr.preparing"));
+
+    const submitBtn = document.getElementById("login-submit-btn");
+    if (submitBtn) { submitBtn.innerText = "Connecting..."; submitBtn.disabled = true; }
 
     try {
-      const result = await QrLoginService.start();
-      if (!this.isMounted || sessionId !== activeQrSessionId) {
-        return;
-      }
-
-      if (!result) {
-        const raw = QrLoginService.getLastError();
-        this.setStatus(this.toFriendlyQrError(raw));
-        return;
-      }
-
-      this.renderQr(result);
-      this.setStatus(this.getInitialStatusText());
-      this.startPolling(result.code, result.deviceNonce, result.pollIntervalSeconds || 3, sessionId);
-    } finally {
-      if (this.isMounted && sessionId === activeQrSessionId) {
-        this.isStartingQr = false;
-        this.updateActionButtons();
-      }
+      await AuthManager.signInWithEmail(email, password);
+      Router.navigate("profileSelection");
+    } catch (error) {
+      if (statusEl) statusEl.innerText = error.message;
+      if (submitBtn) { submitBtn.innerText = "Sign In"; submitBtn.disabled = false; }
     }
   },
 
-  renderQr({ qrImageUrl, loginUrl, code }) {
-    const qrContainer = this.container?.querySelector("#qr-container");
-    const codeText = this.container?.querySelector("#qr-code-text");
-
-    if (!qrContainer || !codeText) {
-      return;
-    }
-
-    qrContainer.innerHTML = "";
-    if (loginUrl) {
-      const canvas = document.createElement("canvas");
-      canvas.className = "qr-image qr-image-canvas";
-      canvas.setAttribute("aria-label", I18n.t("auth.qr.qrImageAlt", {}, { fallback: "QR code" }));
-      QrCodeGenerator.generate(canvas, loginUrl, 420);
-      qrContainer.appendChild(canvas);
-    } else {
-      qrContainer.innerHTML = `
-        <img src="${qrImageUrl}" class="qr-image" alt="${I18n.t("auth.qr.qrImageAlt", {}, { fallback: "QR code" })}" />
-      `;
-    }
-
-    codeText.innerText = I18n.t("auth.qr.codeLabel", { code });
-  },
-
-  startCountdown(expiresAt) {
-    const renderRemaining = () => {
-      const remaining = expiresAt - Date.now();
-      if (remaining <= 0) {
-        if (countdownInterval) {
-          clearInterval(countdownInterval);
-          countdownInterval = null;
-        }
-        return;
-      }
-    };
-
-    renderRemaining();
-    countdownInterval = setInterval(renderRemaining, 1000);
-  },
-
-  startPolling(code, deviceNonce, pollIntervalSeconds = 3, sessionId) {
-    pollInterval = setInterval(async () => {
-      const status = await QrLoginService.poll(code, deviceNonce);
-      if (!this.isMounted || sessionId !== activeQrSessionId) {
-        return;
-      }
-
-      if (status === "approved") {
-        this.setStatus(I18n.t("auth.qr.approved"));
-        clearInterval(pollInterval);
-        pollInterval = null;
-
-        const exchange = await QrLoginService.exchange(code, deviceNonce);
-        if (sessionId !== activeQrSessionId) {
-          return;
-        }
-
-        if (exchange) {
-          LocalStore.remove(GUEST_QR_BYPASS_KEY);
-          LocalStore.set("hasSeenAuthQrOnFirstLaunch", true);
-          this.isSignedIn = true;
-          Router.navigate("profileSelection");
-        } else {
-          this.setStatus(this.toFriendlyQrError(QrLoginService.getLastError()));
-        }
-      }
-
-      if (status === "pending") {
-        this.setStatus(this.getInitialStatusText());
-      }
-
-      if (status === "expired") {
-        this.setStatus(I18n.t("auth.qr.expired"));
-      }
-
-    }, Math.max(2, Number(pollIntervalSeconds || 3)) * 1000);
-  },
-
-  toFriendlyQrError(rawError) {
-    const normalizedError = String(rawError || "").replace(/\s+/g, " ").trim();
-    const conciseReason = normalizedError.length > 160 ? `${normalizedError.slice(0, 157)}...` : normalizedError;
-    const message = normalizedError.toLowerCase();
-    if (!message) {
-      return I18n.t("auth.qr.unavailable");
-    }
-    if (message.includes("qr auth is not configured")
-      || message.includes("missing redirect_base_url configuration")
-      || message.includes("apikey")
-      || message.includes("api key")
-      || message.includes("anon key")) {
-      return I18n.t("auth.qr.notConfigured");
-    }
-    if (message.includes("invalid tv login redirect base url")) {
-      return I18n.t("auth.qr.invalidRedirect");
-    }
-    if (message.includes("start_tv_login_session") && message.includes("could not find the function")) {
-      return I18n.t("auth.qr.missingFunction");
-    }
-    if (message.includes("gen_random_bytes") && message.includes("does not exist")) {
-      return I18n.t("auth.qr.missingExtension");
-    }
-    if (message.includes("network") || message.includes("failed to fetch")) {
-      return I18n.t("auth.qr.networkError");
-    }
-    if (message.includes("unsupported method")
-      || message.includes("error response")
-      || message.includes("http 5")
-      || message.includes("http 404")
-      || message.includes("http 405")) {
-      return I18n.t("auth.qr.serviceUnavailable");
-    }
-    return I18n.t("auth.qr.unavailableWithReason", { reason: conciseReason });
-  },
-
-  setStatus(text) {
-    const statusNode = this.container?.querySelector("#qr-status");
-    if (!statusNode) {
-      return;
-    }
-    statusNode.innerText = text;
-  },
-
-  updateActionButtons() {
-    const refreshButton = this.refreshButton || this.container?.querySelector("#qr-refresh-btn");
-    const backButton = this.backButton || this.container?.querySelector("#qr-back-btn");
-    const disabled = Boolean(this.isLeaving || this.isStartingQr);
-    if (refreshButton instanceof HTMLButtonElement) {
-      refreshButton.innerText = this.getRefreshButtonLabel();
-      refreshButton.disabled = disabled;
-      refreshButton.setAttribute("aria-busy", this.isStartingQr ? "true" : "false");
-    }
-    if (backButton instanceof HTMLButtonElement) {
-      backButton.innerText = this.getBackButtonLabel();
-      backButton.disabled = Boolean(this.isLeaving);
-    }
-  },
-
-  handleRefreshAction() {
-    if (this.isLeaving || this.isStartingQr) {
-      return;
-    }
-    if (this.isSignedIn) {
-      AuthManager.signOut();
-      return;
-    }
-    this.startQr();
-  },
-
-  handleContinueAction() {
-    if (this.isLeaving) {
-      return;
-    }
-    this.isLeaving = true;
-    this.updateActionButtons();
-    if (!this.onboardingMode) {
-      this.cleanup();
-      if (this.hasBackDestination) {
-        Router.back();
-        return;
-      }
-      Router.navigate(this.isSignedIn ? "account" : "home", {}, {
-        replaceHistory: true,
-        skipStackPush: true
-      });
-      return;
-    }
-
+  handleSkip() {
     LocalStore.set("hasSeenAuthQrOnFirstLaunch", true);
-    if (!this.isSignedIn) {
-      LocalStore.set(GUEST_QR_BYPASS_KEY, true);
-    } else {
-      LocalStore.remove(GUEST_QR_BYPASS_KEY);
-    }
-    this.cleanup();
-    if (this.hasBackDestination && this.isSignedIn) {
-      Router.back();
-      return;
-    }
-    Router.navigate("home", {}, {
-      replaceHistory: true,
-      skipStackPush: true
-    });
-  },
-
-  getLeftDescription() {
-    if (this.isSignedIn) {
-      return I18n.t("auth.qr.leftDescriptionSignedIn");
-    }
-    return I18n.t("auth.qr.leftDescriptionSignedOut");
-  },
-
-  getLeftDescriptionMarkup() {
-    const description = this.getLeftDescription();
-    if (this.isSignedIn) {
-      return description;
-    }
-    return description.replace("email/password.", "email/<br />password.");
-  },
-
-  getCardSubtitle() {
-    if (this.isSignedIn) {
-      return I18n.t("auth.qr.cardSubtitleSignedIn");
-    }
-    return I18n.t("auth.qr.cardSubtitleSignedOut");
-  },
-
-  getBackButtonLabel() {
-    if (!this.onboardingMode) {
-      return I18n.t("auth.qr.back");
-    }
-    if (this.isSignedIn) {
-      return I18n.t("auth.qr.continue");
-    }
-    return I18n.t("auth.qr.continueWithoutAccount");
-  },
-
-  getRefreshButtonLabel() {
-    if (this.isSignedIn) {
-      return I18n.t("auth.account.signOut");
-    }
-    if (this.isStartingQr) {
-      return I18n.t("auth_qr_please_wait", {}, { fallback: "Please wait..." });
-    }
-    return I18n.t("auth.qr.refresh");
-  },
-
-  getInitialStatusText() {
-    return I18n.t("auth.qr.scanPrompt", {}, { fallback: "Scan QR and sign in on your phone" });
+    Router.navigate("home", {}, { replaceHistory: true });
   },
 
   onKeyDown(event) {
-    if (ScreenUtils.handleDpadNavigation(event, this.container)) {
-      return;
-    }
-    if (Number(event?.keyCode || 0) !== 13) {
-      return;
-    }
-
+    if (ScreenUtils.handleDpadNavigation(event, this.container)) return;
+    if (Number(event?.keyCode || 0) !== 13) return;
     const current = this.container?.querySelector(".focusable.focused");
-    if (!current) {
-      return;
-    }
-
-    const action = current.dataset.action;
-    if (action === "refresh") {
-      this.handleRefreshAction();
-      return;
-    }
-    if (action === "back") {
-      this.handleContinueAction();
-    }
-  },
-
-  stopIntervals() {
-    if (pollInterval) clearInterval(pollInterval);
-    if (countdownInterval) clearInterval(countdownInterval);
-    pollInterval = null;
-    countdownInterval = null;
+    if (!current) return;
+    if (current.tagName.toLowerCase() === "input") return;
+    current.click();
   },
 
   cleanup() {
-    this.isMounted = false;
-    activeQrSessionId += 1;
-    this.stopIntervals();
-    if (this.refreshButton) {
-      this.refreshButton.onclick = null;
-      this.refreshButton = null;
-    }
-    if (this.backButton) {
-      this.backButton.onclick = null;
-      this.backButton = null;
-    }
+    this.stopExpiryCheck();
     ScreenUtils.hide(this.container);
-    this.container = null;
   }
 };

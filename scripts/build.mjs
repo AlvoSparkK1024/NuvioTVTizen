@@ -161,7 +161,9 @@ async function runBuild() {
     await Promise.all([
       cp(path.join(rootDir, "assets"), path.join(distDir, "assets"), { recursive: true }),
       cp(path.join(rootDir, "res"), path.join(distDir, "res"), { recursive: true }),
-      cp(path.join(rootDir, "docs", "youtube-proxy.html"), path.join(distDir, "youtube-proxy.html"))
+      cp(path.join(rootDir, "docs", "youtube-proxy.html"), path.join(distDir, "youtube-proxy.html")),
+      cp(path.join(rootDir, "config.xml"), path.join(distDir, "config.xml")),
+      mkdir(path.join(distDir, "js"), { recursive: true })
     ]);
 
     if (!copiedAppInfoSource) {

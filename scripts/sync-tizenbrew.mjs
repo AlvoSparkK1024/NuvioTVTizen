@@ -7,55 +7,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
 const appName = "Nuvio TV";
-const defaultHostedEnvUrl = "https://nuvioapp.space/nuvio.env.js";
+
+// We use the LOCAL nuvio.env.js as the source of truth for the self-hosted ecosystem
 const defaultEnvFileContents = `(function bootstrapTizenEnv() {
   var root = typeof globalThis !== "undefined" ? globalThis : window;
-  var finished = false;
+  root.__NUVIO_ENV__ = {
+    SUPABASE_URL: "https://shznduulclxqundfztxv.supabase.co",
+    SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNoem5kdXVsY2x4cXVuZGZ6dHh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2NTU5ODgxOTcsImV4cCI6MTk3MTU2NDE5N30.R_XW7kS_XW7kS_XW7kS_XW7kS_XW7kS_XW7kS_XW7kS",
+    TV_LOGIN_REDIRECT_BASE_URL: "https://nuvioapp.space/tv-login",
+    YOUTUBE_PROXY_URL: "youtube-proxy.html",
+    ADDON_REMOTE_BASE_URL: "",
+    ENABLE_REMOTE_WRAPPER_MODE: false,
+    PREFERRED_PLAYBACK_ORDER: ["native-hls", "hls.js", "dash.js", "native-file", "platform-avplay"],
+    TMDB_API_KEY: ""
+  };
 
-  function normalizeUrl(value) {
-    return typeof value === "string" ? value.trim() : "";
+  if (typeof root.__NUVIO_TIZEN_BOOTSTRAP_APP__ === "function") {
+    root.__NUVIO_TIZEN_BOOTSTRAP_APP__();
   }
-
-  function applyDefaults() {
-    root.__NUVIO_ENV__ = Object.assign({
-      SUPABASE_URL: "",
-      SUPABASE_ANON_KEY: "",
-      TV_LOGIN_REDIRECT_BASE_URL: "",
-      PUBLIC_APP_URL: "",
-      YOUTUBE_PROXY_URL: "",
-      ADDON_REMOTE_BASE_URL: "",
-      ENABLE_REMOTE_WRAPPER_MODE: false,
-      PREFERRED_PLAYBACK_ORDER: ["native-hls", "hls.js", "dash.js", "native-file", "platform-avplay"],
-      TMDB_API_KEY: ""
-    }, root.__NUVIO_ENV__ || {});
-  }
-
-  function finish() {
-    if (finished) {
-      return;
-    }
-    finished = true;
-    applyDefaults();
-    if (typeof root.__NUVIO_TIZEN_BOOTSTRAP_APP__ === "function") {
-      root.__NUVIO_TIZEN_BOOTSTRAP_APP__();
-    }
-  }
-
-  var hostedEnvUrl = normalizeUrl(root.__NUVIO_TIZEN_ENV_URL__) || ${JSON.stringify(defaultHostedEnvUrl)};
-  if (!hostedEnvUrl || typeof document === "undefined") {
-    finish();
-    return;
-  }
-
-  var script = document.createElement("script");
-  script.src = hostedEnvUrl;
-  script.async = false;
-  script.onload = finish;
-  script.onerror = finish;
-  document.head.appendChild(script);
-  setTimeout(finish, 3000);
 }());
 `;
+
 const tizenIconSource = path.join(rootDir, "assets", "images", "tizenIcon.png");
 
 function fail(message) {
@@ -71,47 +43,28 @@ function parseArgs(argv) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-
     if (arg === "--path") {
       targetPath = argv[index + 1] || "";
       index += 1;
       continue;
     }
-
     if (arg === "--env-source") {
       envSourcePath = argv[index + 1] || "";
       index += 1;
       continue;
     }
-
     if (!arg.startsWith("--")) {
       positionalArgs.push(arg);
       continue;
     }
-
     fail(`Unknown argument: ${arg}`);
   }
 
-  if (!targetPath) {
-    targetPath = positionalArgs[0] || npmProvidedPath || "";
-  }
+  if (!targetPath) targetPath = positionalArgs[0] || npmProvidedPath || "";
+  if (!targetPath) fail("Missing --path.");
+  if (!path.isAbsolute(targetPath)) fail(`Target path must be absolute: ${targetPath}`);
 
-  if (!targetPath) {
-    fail("Missing --path.");
-  }
-
-  if (!path.isAbsolute(targetPath)) {
-    fail(`Target path must be absolute: ${targetPath}`);
-  }
-
-  if (envSourcePath && !path.isAbsolute(envSourcePath)) {
-    fail(`Env source path must be absolute: ${envSourcePath}`);
-  }
-
-  return {
-    targetDir: targetPath,
-    envSourcePath
-  };
+  return { targetDir: targetPath, envSourcePath };
 }
 
 async function assertDistExists() {
@@ -137,11 +90,7 @@ async function syncBuild(targetAppDir, envSourcePath) {
   ]);
 
   await cp(path.join(distDir, "app.bundle.js"), path.join(targetAppDir, "app.bundle.js"));
-  if (envSourcePath) {
-    await cp(envSourcePath, path.join(targetAppDir, "nuvio.env.js"));
-  } else {
-    await writeFile(path.join(targetAppDir, "nuvio.env.js"), defaultEnvFileContents, "utf8");
-  }
+  await writeFile(path.join(targetAppDir, "nuvio.env.js"), defaultEnvFileContents, "utf8");
 }
 
 function buildIndexHtml() {
@@ -184,13 +133,8 @@ function loadScript(src) {
 }
 
 window.__NUVIO_TIZEN_BOOTSTRAP_APP__ = function bootstrapApp() {
-  if (window.__NUVIO_TIZEN_APP_BOOTSTRAPPED__) {
-    return;
-  }
-
+  if (window.__NUVIO_TIZEN_APP_BOOTSTRAPPED__) return;
   window.__NUVIO_TIZEN_APP_BOOTSTRAPPED__ = true;
-  loadScript("js/runtime/polyfills.js");
-  loadScript("js/runtime/env.js");
   loadScript("assets/libs/qrcode-generator.js");
   loadScript("app.bundle.js");
 };
@@ -203,7 +147,7 @@ async function syncModule(targetDir, envSourcePath) {
   const appDir = path.join(targetDir, "app");
   await mkdir(targetDir, { recursive: true });
   await syncBuild(appDir, envSourcePath);
-  await cp(tizenIconSource, path.join(targetDir, "icon.png"));
+  await cp(tizenIconSource, path.join(targetDir, "icon.png")).catch(() => {});
   await writeFile(path.join(appDir, "index.html"), buildIndexHtml(), "utf8");
   await writeFile(path.join(appDir, "main.js"), buildMainJs(), "utf8");
 }

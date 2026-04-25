@@ -26,6 +26,7 @@
     "@babel/runtime": "^7.29.2",
     "@chialab/esbuild-plugin-babel": "^0.19.1",
     "@csstools/postcss-global-data": "^4.0.0",
+    "@oxc-parser/binding-win32-x64-msvc": "^0.127.0",
     "autoprefixer": "^10.4.27",
     "babel-loader": "^10.1.1",
     "core-js": "^3.49.0",
@@ -37,6 +38,7 @@
     "regenerator-runtime": "^0.14.1"
   },
   "dependencies": {
+    "firebase": "^12.12.1",
     "intersection-observer": "^0.12.2",
     "whatwg-fetch": "^3.6.20"
   }
