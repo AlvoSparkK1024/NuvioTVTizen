@@ -8,7 +8,7 @@ const _S = "UjVfWFc3a1NfWFc3a1NfWFc3a1NfWFc3a1NfWFc3a1NfWFc3a1NfWFc3a1M=";
 const BASE_URL = atob(_U);
 const ANON_KEY = atob(_K) + "ZTFNamN3ZlEwL" + atob(_S);
 
-class SupabaseApi {
+class SupabaseApiImpl {
   getHeaders() {
     return {
       "apikey": ANON_KEY,
@@ -43,4 +43,4 @@ class SupabaseApi {
   }
 }
 
-export const SupabaseService = new SupabaseApi();
+export const SupabaseApi = new SupabaseApiImpl();
